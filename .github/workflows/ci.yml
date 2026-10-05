@@ -18,7 +18,8 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: cfn-lint template.yaml
-      - run: python -m pip install --only-binary=:all: -r src/requirements.txt --target build/package
+      - run: |
+          python -m pip install --only-binary=:all: -r src/requirements.txt --target build/package
       - run: pip-audit -r src/requirements.txt --no-deps --disable-pip
       - run: python scripts/build_release.py --package-dir build/package --output build/security-jira.zip
       - run: python scripts/security_operator.py preview --risk tests/fixtures/risk.csv --issues tests/fixtures/issues.csv
