@@ -1,0 +1,18 @@
+[project]
+name = "snyk-jira-automation"
+version = "2.1.0"
+description = "Upload-triggered security CSV and daily Snyk Critical finding ingestion into Jira"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["build", ".aws-sam"]
+force-exclude = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S", "UP"]
+ignore = ["S310"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S106"]

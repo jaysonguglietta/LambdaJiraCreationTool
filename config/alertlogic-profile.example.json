@@ -1,0 +1,17 @@
+{
+  "alertlogic": {
+    "name": "Alert Logic",
+    "prefix": "products/alertlogic/",
+    "columns": {
+      "group": "AssetGroup",
+      "finding_id": "FindingId",
+      "title": "Title",
+      "severity": "Severity",
+      "status": "Status",
+      "target": "Asset",
+      "remediation": "Remediation"
+    },
+    "critical_values": ["Critical"],
+    "open_values": ["Open"]
+  }
+}

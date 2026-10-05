@@ -1,0 +1,9 @@
+{
+  "operation": "verify",
+  "product": "snyk",
+  "repository": "REPLACE_WITH_EXACT_REPOSITORY",
+  "finding_id": "REPLACE_WITH_EXACT_FINDING_ID",
+  "s3_key": "verification/REPLACE_WITH_REVIEWED_SCAN.json",
+  "version_id": "REPLACE_WITH_EXACT_VERSION_ID",
+  "sha256": "REPLACE_WITH_EXACT_REVIEWED_SHA256"
+}

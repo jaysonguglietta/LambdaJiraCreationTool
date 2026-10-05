@@ -1,0 +1,5 @@
+AssetGroup,FindingId,Title,Severity,Status,Asset,Remediation
+production/web-tier,AL-101,Unsupported web server version,Critical,Open,web01,Upgrade to the vendor-supported patched release and validate service health.
+production/web-tier,AL-101,Unsupported web server version,Critical,Open,web02,Upgrade to the vendor-supported patched release and validate service health.
+production/web-tier,AL-102,Obsolete TLS configuration,High,Open,web01,Restrict protocols according to the vendor hardening guide.
+production/web-tier,AL-103,Previously remediated exposure,Critical,Closed,web01,Already remediated.

@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "source": "snyk",
+  "repository": "REPLACE_WITH_EXACT_REPOSITORY",
+  "finding_id": "REPLACE_WITH_EXACT_FINDING_ID",
+  "targets": ["REPLACE_WITH_ALL_MAPPED_TARGETS"],
+  "owner": "REPLACE_WITH_APPROVED_OWNER",
+  "approved_by": "REPLACE_WITH_ACTUAL_REVIEWER",
+  "reason": "REPLACE_WITH_JUSTIFIED_EXCEPTION_REASON",
+  "expires_at": "REPLACE_WITH_FUTURE_EXPIRY_WITHIN_90_DAYS",
+  "compensating_controls": "REPLACE_WITH_IMPLEMENTED_CONTROLS",
+  "migration_plan": "REPLACE_WITH_OWNED_DATED_MIGRATION_PLAN",
+  "approval_url": "https://review.example/REPLACE_WITH_REAL_APPROVAL"
+}

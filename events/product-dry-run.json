@@ -1,0 +1,6 @@
+{
+  "product": "alertlogic",
+  "s3Key": "products/alertlogic/example.csv",
+  "dryRun": true,
+  "force": false
+}

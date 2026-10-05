@@ -1,0 +1,18 @@
+{
+  "stack_name": "",
+  "region": "",
+  "profile": "",
+  "parameters": {
+    "UploadTriggerState": "",
+    "ScheduleState": "",
+    "MonitorState": "",
+    "DailyScheduleExpression": "",
+    "ScheduleTimezone": "",
+    "MonitorScheduleExpression": "",
+    "EvidenceScannerRoleArn": "",
+    "EvidenceProducerRoleArn": "",
+    "NotificationEmail": "",
+    "InputRetentionDays": "",
+    "LogRetentionDays": ""
+  }
+}

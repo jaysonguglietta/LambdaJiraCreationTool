@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "source": "snyk",
+  "report_sha256": "REPLACE_WITH_EXACT_DETAIL_CSV_SHA256",
+  "occurrences": [
+    {
+      "repository": "REPLACE_WITH_EXACT_REPOSITORY",
+      "finding_id": "REPLACE_WITH_EXACT_FINDING_ID",
+      "target": "REPLACE_WITH_EXACT_TARGET",
+      "package_name": "REPLACE_WITH_SOURCE_PACKAGE",
+      "installed_version": "REPLACE_WITH_OBSERVED_VERSION",
+      "fixed_version": "REPLACE_WITH_SOURCE_SUPPORTED_VERSION",
+      "dependency_path": "REPLACE_WITH_SOURCE_DEPENDENCY_PATH",
+      "location": "REPLACE_WITH_SOURCE_LOCATION",
+      "environment": "REPLACE_WITH_OBSERVED_ENVIRONMENT",
+      "evidence_url": "https://source.example/REPLACE_WITH_REAL_ADVISORY",
+      "remediation": "REPLACE_WITH_SOURCE_BACKED_FIX_INSTRUCTIONS",
+      "fix_state": "reported_fix"
+    }
+  ]
+}

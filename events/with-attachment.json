@@ -1,0 +1,14 @@
+{
+  "operation": "attachments",
+  "product": "snyk",
+  "dryRun": true,
+  "force": false,
+  "attachments": [
+    {
+      "s3_key": "snyk/attachments/REPLACE_WITH_EVIDENCE_FILE",
+      "version_id": "REPLACE_WITH_EXACT_SCANNED_VERSION",
+      "display_name": "remediation-evidence.pdf",
+      "jira_issue_key": "REPLACE_WITH_PROJECT_KEY-REPLACE_WITH_NUMERIC_KEY"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": "0",
+  "id": "local-upload-test",
+  "source": "aws.s3",
+  "detail-type": "Object Created",
+  "detail": {
+    "bucket": {"name": "replace-with-input-bucket"},
+    "object": {
+      "key": "snyk/issues-detail/snyk_issues_detail_MM_DD_YYYY_id.csv"
+    },
+    "reason": "PutObject"
+  }
+}

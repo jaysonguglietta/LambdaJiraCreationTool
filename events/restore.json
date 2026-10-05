@@ -1,0 +1,12 @@
+{
+  "operation": "restore",
+  "product": "snyk",
+  "fingerprint": "REPLACE_WITH_EXACT_V2_FINGERPRINT",
+  "approved_reason": "REPLACE_WITH_REVIEWED_SCOPE_RECOVERY_REASON",
+  "audit": {
+    "bucket": "REPLACE_WITH_APPROVED_AUDIT_BUCKET",
+    "key": "mappings/REPLACE_WITH_FINGERPRINT/REPLACE_WITH_ARTIFACT_ID.json",
+    "version_id": "REPLACE_WITH_EXACT_AUDIT_VERSION",
+    "sha256": "REPLACE_WITH_EXACT_REVIEWED_SHA256"
+  }
+}

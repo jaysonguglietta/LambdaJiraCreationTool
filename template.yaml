@@ -1,0 +1,862 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Upload-triggered and scheduled security CSV ingestion into Jira, with product-specific parsers.
+
+Parameters:
+  ExistingInputBucketName:
+    Type: String
+    Default: ""
+    Description: Existing same-region S3 bucket, or leave blank to create an encrypted input bucket.
+    AllowedPattern: "^$|[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
+  IngestionPrefix:
+    Type: String
+    Default: ""
+    Description: Optional root folder, such as incoming/security/. Must end in /; empty preserves existing paths.
+    AllowedPattern: "^$|[A-Za-z0-9][A-Za-z0-9/_-]*/"
+  ProductProfilesJson:
+    Type: String
+    Default: "{}"
+    MaxLength: 2200
+    Description: Explicit column mappings for additional product CSVs under products/. See the README example.
+  UploadTriggerState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Enable to process uploads automatically; DryRun controls Jira writes.
+  JiraSecretArn:
+    Type: String
+    Description: ARN of a Secrets Manager secret containing base_url, email, api_token, and a separate identity_key.
+    NoEcho: true
+  JiraProjectKey:
+    Type: String
+    Description: Explicitly selected destination project key; there is no tenant-specific default.
+    AllowedPattern: "[A-Za-z][A-Za-z0-9_]*"
+  JiraPriorityName:
+    Type: String
+    Default: Major
+  JiraOrigin:
+    Type: String
+    AllowedPattern: "https://[a-z0-9-]+[.]atlassian[.]net"
+  CampaignIssueType:
+    Type: String
+    Default: Epic
+  FindingIssueType:
+    Type: String
+    Default: Bug
+  ActivationApproved:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Separate human approval gate for every live Jira mutation.
+  PolicyKey:
+    Type: String
+    Default: ""
+  PolicySha256:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|[a-f0-9]{64}"
+  EvidenceScannerRoleArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|arn:[a-z-]+:iam::[0-9]{12}:role/.+"
+    Description: Trusted scanner role, required before managed-bucket evidence can be tagged CLEAN.
+  EvidenceProducerRoleArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|arn:[a-z-]+:iam::[0-9]{12}:role/.+"
+    Description: Trusted source-enrichment producer; separate from report/evidence uploaders.
+  ScheduleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Keep disabled until a dry run has been reviewed.
+  DryRun:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  RiskReportPrefix:
+    Type: String
+    Default: snyk/risk-exposure/
+    AllowedPattern: "[A-Za-z0-9][A-Za-z0-9/_-]*/"
+  IssuesReportPrefix:
+    Type: String
+    Default: snyk/issues-detail/
+    AllowedPattern: "[A-Za-z0-9][A-Za-z0-9/_-]*/"
+  AttachmentPrefix:
+    Type: String
+    Default: snyk/attachments/
+    AllowedPattern: "[A-Za-z0-9][A-Za-z0-9/_-]*/"
+  ProductsReportPrefix:
+    Type: String
+    Default: products/
+    AllowedPattern: "[A-Za-z0-9][A-Za-z0-9/_-]*/"
+  JiraAllowedHostSuffix:
+    Type: String
+    Default: atlassian.net
+    AllowedValues: [atlassian.net]
+  MaxInputAgeHours:
+    Type: Number
+    Default: 36
+    MinValue: 1
+    MaxValue: 168
+  MaxInputBytes:
+    Type: Number
+    Default: 20971520
+    MinValue: 1
+    MaxValue: 20971520
+  MaxAttachmentBytes:
+    Type: Number
+    Default: 10485760
+    MinValue: 1
+    MaxValue: 10485760
+  MaxAttachmentsPerRun:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 20
+  AllowedAttachmentTypes:
+    Type: String
+    Default: text/csv,text/plain,application/json,application/pdf,image/png,image/jpeg
+  RequireCleanAttachmentTag:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  EnforceCountMatch:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  RequireSameReportDate:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  UpdateExistingTitles:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  MaxGroupsPerRun:
+    Type: Number
+    Default: 5000
+    MinValue: 1
+    MaxValue: 5000
+  MaxGroupsPerInvocation:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 100
+  MaxNewTickets:
+    Type: Number
+    Default: 50
+    MinValue: 1
+    MaxValue: 10000
+  WorkSeconds:
+    Type: Number
+    Default: 240
+    MinValue: 1
+    MaxValue: 240
+  PairWaitHours:
+    Type: Number
+    Default: 4
+    MinValue: 1
+    MaxValue: 72
+  StateRetentionDays:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    MaxValue: 2555
+  LogLevel:
+    Type: String
+    Default: INFO
+    AllowedValues: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+  DailyScheduleExpression:
+    Type: String
+    Default: cron(0 8 * * ? *)
+  ScheduleTimezone:
+    Type: String
+    Default: UTC
+  MonitorState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Independent operational monitor; enable deliberately even for schedule-only deployments.
+  MonitorScheduleExpression:
+    Type: String
+    Default: rate(1 hour)
+  NotificationEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address for daily summaries and alarms; subscription confirmation is required.
+  InputRetentionDays:
+    Type: Number
+    Default: 90
+    MinValue: 30
+    MaxValue: 2555
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653]
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
+  UseExistingBucket: !Not [!Equals [!Ref ExistingInputBucketName, ""]]
+  CreateInputBucket: !Equals [!Ref ExistingInputBucketName, ""]
+  HasIngestionPrefix: !Not [!Equals [!Ref IngestionPrefix, ""]]
+  UploadsEnabled: !Equals [!Ref UploadTriggerState, ENABLED]
+  HasScanner: !Not [!Equals [!Ref EvidenceScannerRoleArn, ""]]
+  HasProducer: !Not [!Equals [!Ref EvidenceProducerRoleArn, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 512
+    Timeout: 300
+    Tracing: Active
+
+Resources:
+  AuditBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ObjectOwnership: BucketOwnerEnforced}]
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ApprovedAuditRetention
+            Status: Enabled
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: !Ref InputRetentionDays
+  AuditBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AuditBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt AuditBucket.Arn, !Sub "${AuditBucket.Arn}/*"]
+            Condition:
+              Bool: {aws:SecureTransport: "false"}
+  InputBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateInputBucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireRiskReports
+            Status: Enabled
+            Prefix: !Sub "${IngestionPrefix}${RiskReportPrefix}"
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration:
+              NoncurrentDays: !Ref InputRetentionDays
+          - Id: ExpireDetailReports
+            Status: Enabled
+            Prefix: !Sub "${IngestionPrefix}${IssuesReportPrefix}"
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration: {NoncurrentDays: !Ref InputRetentionDays}
+          - Id: ExpireAttachments
+            Status: Enabled
+            Prefix: !Sub "${IngestionPrefix}${AttachmentPrefix}"
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration: {NoncurrentDays: !Ref InputRetentionDays}
+          - Id: ExpireProductReports
+            Status: Enabled
+            Prefix: !Sub "${IngestionPrefix}${ProductsReportPrefix}"
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration: {NoncurrentDays: !Ref InputRetentionDays}
+          - Id: ExpireEnrichment
+            Status: Enabled
+            Prefix: !Sub "${IngestionPrefix}enrichment/"
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration: {NoncurrentDays: !Ref InputRetentionDays}
+          - Id: ExpireVerification
+            Status: Enabled
+            Prefix: !Sub "${IngestionPrefix}verification/"
+            ExpirationInDays: !Ref InputRetentionDays
+            NoncurrentVersionExpiration: {NoncurrentDays: !Ref InputRetentionDays}
+      Tags:
+        - Key: DataClassification
+          Value: Security-Findings
+
+  InputBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateInputBucket
+    Properties:
+      Bucket: !Ref InputBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: RequireTLS
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: [!GetAtt InputBucket.Arn, !Sub "${InputBucket.Arn}/*"]
+            Condition:
+              Bool: {aws:SecureTransport: "false"}
+          - Sid: OnlyScannerCanTagEvidence
+            Effect: Deny
+            Principal: "*"
+            Action: [s3:PutObjectTagging, s3:PutObjectVersionTagging, s3:DeleteObjectTagging, s3:DeleteObjectVersionTagging]
+            Resource: !Sub "${InputBucket.Arn}/${IngestionPrefix}${AttachmentPrefix}*"
+            Condition:
+              ArnNotEquals:
+                aws:PrincipalArn: !If
+                  - HasScanner
+                  - !Ref EvidenceScannerRoleArn
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/security-automation-no-approved-scanner"
+          - Sid: OnlyTrustedProducerCanEnrich
+            Effect: Deny
+            Principal: "*"
+            Action: [s3:PutObject, s3:DeleteObject, s3:DeleteObjectVersion]
+            Resource: !Sub "${InputBucket.Arn}/${IngestionPrefix}enrichment/*"
+            Condition:
+              ArnNotEquals:
+                aws:PrincipalArn: !If
+                  - HasProducer
+                  - !Ref EvidenceProducerRoleArn
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/security-automation-no-approved-producer"
+
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: state_status
+          AttributeType: S
+        - AttributeName: state_deadline
+          AttributeType: N
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: state_status
+              KeyType: HASH
+            - AttributeName: state_deadline
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  NotificationKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: CloudWatchAlarms
+            Effect: Allow
+            Principal: {Service: cloudwatch.amazonaws.com}
+            Action: [kms:Decrypt, kms:GenerateDataKey*]
+            Resource: "*"
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:*
+  SummaryTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      KmsMasterKeyId: !GetAtt NotificationKey.Arn
+  SummaryTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref SummaryTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudWatchAlarmPublish
+            Effect: Allow
+            Principal: {Service: cloudwatch.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref SummaryTopic
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:*
+
+  SummaryEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref SummaryTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  SchedulerDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600
+
+  UploadDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-upload-failures.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600
+
+  UploadQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-uploads.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      SqsManagedSseEnabled: true
+      VisibilityTimeout: 1800
+      MessageRetentionPeriod: 345600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt UploadDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  UploadRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Route input-bucket uploads under the chosen root folder to a serialized ingestion queue.
+      State: !Ref UploadTriggerState
+      EventPattern:
+        source: [aws.s3]
+        detail-type: [Object Created]
+        account: [!Ref AWS::AccountId]
+        detail:
+          bucket:
+            name: [!If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]]
+          object:
+            key: !If
+              - HasIngestionPrefix
+              - - prefix: !Ref IngestionPrefix
+              - - exists: true
+      Targets:
+        - Id: SecurityCsvUploadQueue
+          Arn: !GetAtt UploadQueue.Arn
+          SqsParameters:
+            MessageGroupId: security-csv-ingestion
+          DeadLetterConfig:
+            Arn: !GetAtt SchedulerDeadLetterQueue.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 86400
+            MaximumRetryAttempts: 185
+
+  UploadQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref UploadQueue, !Ref SchedulerDeadLetterQueue]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EventBridgeUploadDelivery
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: [!GetAtt UploadQueue.Arn, !GetAtt SchedulerDeadLetterQueue.Arn]
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt UploadRule.Arn
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  AutomationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handler.lambda_handler
+      ReservedConcurrentExecutions: 1
+      Events:
+        ReportUploads:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt UploadQueue.Arn
+            BatchSize: 1
+            Enabled: !If [UploadsEnabled, true, false]
+            FunctionResponseTypes: [ReportBatchItemFailures]
+      Environment:
+        Variables:
+          INPUT_BUCKET: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+          INGESTION_PREFIX: !Ref IngestionPrefix
+          PRODUCTS_REPORT_PREFIX: !Ref ProductsReportPrefix
+          PRODUCT_PROFILES_JSON: !Ref ProductProfilesJson
+          RISK_REPORT_PREFIX: !Ref RiskReportPrefix
+          ISSUES_REPORT_PREFIX: !Ref IssuesReportPrefix
+          ATTACHMENT_PREFIX: !Ref AttachmentPrefix
+          JIRA_SECRET_ARN: !Ref JiraSecretArn
+          JIRA_PROJECT_KEY: !Ref JiraProjectKey
+          JIRA_EPIC_ISSUE_TYPE: !Ref CampaignIssueType
+          JIRA_CHILD_ISSUE_TYPE: !Ref FindingIssueType
+          JIRA_PRIORITY_NAME: !Ref JiraPriorityName
+          JIRA_ALLOWED_HOST_SUFFIX: !Ref JiraAllowedHostSuffix
+          STATE_TABLE_NAME: !Ref StateTable
+          AUDIT_BUCKET: !Ref AuditBucket
+          STATE_RETENTION_DAYS: !Ref StateRetentionDays
+          UPLOAD_QUEUE_URL: !Ref UploadQueue
+          JIRA_ORIGIN: !Ref JiraOrigin
+          ACTIVATION_APPROVED: !Ref ActivationApproved
+          POLICY_KEY: !Ref PolicyKey
+          POLICY_SHA256: !Ref PolicySha256
+          SUMMARY_TOPIC_ARN: !Ref SummaryTopic
+          MAX_INPUT_AGE_HOURS: !Ref MaxInputAgeHours
+          MAX_INPUT_BYTES: !Ref MaxInputBytes
+          MAX_ATTACHMENT_BYTES: !Ref MaxAttachmentBytes
+          MAX_ATTACHMENTS_PER_RUN: !Ref MaxAttachmentsPerRun
+          ALLOWED_ATTACHMENT_TYPES: !Ref AllowedAttachmentTypes
+          REQUIRE_CLEAN_ATTACHMENT_TAG: !Ref RequireCleanAttachmentTag
+          ENFORCE_COUNT_MATCH: !Ref EnforceCountMatch
+          REQUIRE_SAME_REPORT_DATE: !Ref RequireSameReportDate
+          UPDATE_EXISTING_TITLES: !Ref UpdateExistingTitles
+          MAX_GROUPS_PER_RUN: !Ref MaxGroupsPerRun
+          MAX_GROUPS_PER_INVOCATION: !Ref MaxGroupsPerInvocation
+          MAX_NEW_TICKETS: !Ref MaxNewTickets
+          WORK_SECONDS: !Ref WorkSeconds
+          PAIR_WAIT_HOURS: !Ref PairWaitHours
+          DRY_RUN: !Ref DryRun
+          LOG_LEVEL: !Ref LogLevel
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: ListReportPrefixes
+              Effect: Allow
+              Action: [s3:ListBucket, s3:ListBucketVersions]
+              Resource: !If
+                - UseExistingBucket
+                - !Sub arn:${AWS::Partition}:s3:::${ExistingInputBucketName}
+                - !GetAtt InputBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix:
+                    - !Sub ${IngestionPrefix}${RiskReportPrefix}*
+                    - !Sub ${IngestionPrefix}${IssuesReportPrefix}*
+            - Sid: ReadReportsAndAttachments
+              Effect: Allow
+              Action: [s3:GetObject, s3:GetObjectVersion]
+              Resource:
+                - !Sub
+                  - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}${RiskReportPrefix}*
+                  - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+                - !Sub
+                  - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}${IssuesReportPrefix}*
+                  - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+                - !Sub
+                  - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}${AttachmentPrefix}*
+                  - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+                - !Sub
+                  - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}${ProductsReportPrefix}*
+                  - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+                - !Sub
+                  - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}configuration/*
+                  - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+                - !Sub
+                  - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}enrichment/*
+                  - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+                - !Sub
+                  - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}verification/*
+                  - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+            - Sid: WriteImmutableAudit
+              Effect: Allow
+              Action: [s3:PutObject, s3:GetObject, s3:GetObjectVersion]
+              Resource: !Sub "${AuditBucket.Arn}/*"
+            - Sid: InspectAuditBucket
+              Effect: Allow
+              Action: [s3:GetBucketVersioning, s3:GetBucketLocation]
+              Resource: !GetAtt AuditBucket.Arn
+            - Sid: VerifyAttachmentScanTag
+              Effect: Allow
+              Action: [s3:GetObjectTagging, s3:GetObjectVersionTagging]
+              Resource: !Sub
+                - arn:${AWS::Partition}:s3:::${Bucket}/${IngestionPrefix}${AttachmentPrefix}*
+                - Bucket: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+            - Sid: ConsumeUploadQueue
+              Effect: Allow
+              Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes]
+              Resource: !GetAtt UploadQueue.Arn
+            - Sid: ContinueBoundedJobs
+              Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt UploadQueue.Arn
+            - Sid: ReadJiraSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref JiraSecretArn
+            - Sid: MaintainIdempotencyState
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:BatchGetItem
+              Resource: [!GetAtt StateTable.Arn, !Sub "${StateTable.Arn}/index/status-index"]
+            - Sid: PublishRunSummary
+              Effect: Allow
+              Action: sns:Publish
+              Resource: !Ref SummaryTopic
+            - Sid: EncryptNotifications
+              Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey*]
+              Resource: !GetAtt NotificationKey.Arn
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub sns.${AWS::Region}.amazonaws.com
+
+  AutomationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AutomationFunction}
+      RetentionInDays: !Ref LogRetentionDays
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
+              ArnEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule-group/default
+      Policies:
+        - PolicyName: InvokeSnykJiraAutomation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt AutomationFunction.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt SchedulerDeadLetterQueue.Arn
+
+  DailySchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Reconcile current Snyk reports on the approved local-time schedule.
+      ScheduleExpression: !Ref DailyScheduleExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      State: !Ref ScheduleState
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn: !GetAtt AutomationFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: !Sub '{"dryRun":${DryRun},"force":false}'
+        DeadLetterConfig:
+          Arn: !GetAtt SchedulerDeadLetterQueue.Arn
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 2
+  OperationalMonitor:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Alert on incomplete report pairs, expiring exceptions and notification failures.
+      ScheduleExpression: !Ref MonitorScheduleExpression
+      State: !Ref MonitorState
+      FlexibleTimeWindow: {Mode: "OFF"}
+      Target:
+        Arn: !GetAtt AutomationFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"operation":"monitor"}'
+        DeadLetterConfig:
+          Arn: !GetAtt SchedulerDeadLetterQueue.Arn
+        RetryPolicy: {MaximumEventAgeInSeconds: 3600, MaximumRetryAttempts: 2}
+  QueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: An upload or continuation has waited longer than one hour.
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions: [{Name: QueueName, Value: !GetAtt UploadQueue.QueueName}]
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3600
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SummaryTopic]
+  RejectedUploadMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AutomationLogGroup
+      FilterPattern: '{ $.event = "upload_rejected" }'
+      MetricTransformations:
+        - MetricNamespace: SecurityAutomation/Jira
+          MetricName: RejectedUploads
+          MetricValue: "1"
+          DefaultValue: 0
+  RejectedUploadAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A permanently invalid input was quarantined without Jira writes.
+      Namespace: SecurityAutomation/Jira
+      MetricName: RejectedUploads
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SummaryTopic]
+
+  FunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Security CSV-to-Jira Lambda reported an error.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AutomationFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SummaryTopic]
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A scheduled run or upload event could not be delivered.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt SchedulerDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SummaryTopic]
+
+  UploadFailureMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AutomationLogGroup
+      FilterPattern: '{ $.event = "upload_failed" }'
+      MetricTransformations:
+        - MetricNamespace: SecurityAutomation/Jira
+          MetricName: UploadFailures
+          MetricValue: "1"
+          DefaultValue: 0
+
+  UploadFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: An uploaded CSV failed processing and will retry from SQS.
+      Namespace: SecurityAutomation/Jira
+      MetricName: UploadFailures
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SummaryTopic]
+
+  UploadDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Uploaded CSV processing exhausted retries; inspect and redrive after correction.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt UploadDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref SummaryTopic]
+
+Outputs:
+  AuditBucketName:
+    Value: !Ref AuditBucket
+  NotificationKeyArn:
+    Value: !GetAtt NotificationKey.Arn
+  InputBucketName:
+    Value: !If [UseExistingBucket, !Ref ExistingInputBucketName, !Ref InputBucket]
+  ReportRootPrefix:
+    Value: !Ref IngestionPrefix
+  UploadRuleName:
+    Value: !Ref UploadRule
+  UploadQueueUrl:
+    Value: !Ref UploadQueue
+  UploadDeadLetterQueueUrl:
+    Value: !Ref UploadDeadLetterQueue
+  FunctionName:
+    Value: !Ref AutomationFunction
+  StateTableName:
+    Value: !Ref StateTable
+  SummaryTopicArn:
+    Value: !Ref SummaryTopic
+  DeadLetterQueueUrl:
+    Value: !Ref SchedulerDeadLetterQueue
+  ScheduleName:
+    Value: !Ref DailySchedule

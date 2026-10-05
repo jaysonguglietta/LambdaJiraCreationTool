@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "source": "snyk",
+  "repository": "REPLACE_WITH_EXACT_REPOSITORY",
+  "finding_id": "REPLACE_WITH_EXACT_FINDING_ID",
+  "targets": ["REPLACE_WITH_ALL_MAPPED_TARGETS"],
+  "owner": "REPLACE_WITH_APPROVED_OWNER",
+  "approved_by": "REPLACE_WITH_ACTUAL_REVIEWER",
+  "disposition": "resolved",
+  "scanned_at": "REPLACE_WITH_FRESH_TIMEZONE_AWARE_SCAN_TIME",
+  "deployed_at": "REPLACE_WITH_TIMEZONE_AWARE_DEPLOYMENT_TIME",
+  "artifact_digest": "sha256:REPLACE_WITH_DEPLOYED_ARTIFACT_SHA256",
+  "scan_url": "https://scanner.example/REPLACE_WITH_REAL_SCAN",
+  "deployment_url": "https://ci.example/REPLACE_WITH_REAL_DEPLOYMENT"
+}
