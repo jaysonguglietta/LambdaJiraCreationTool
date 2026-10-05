@@ -2,24 +2,26 @@
 
 This guide covers setup, deliberate activation, routine imports, and recovery. All commands below are examples for an authorized operator; no AWS or Jira actions were performed during local implementation. Keep production writes disabled until the staging checklist passes.
 
-For all environment and deployment settings, use the [private configuration workflow](docs/CONFIGURATION.md). Populate only ignored `config/local/` copies. The tracked JSON examples stay blank, and Jira origin and project key must be explicitly configured. Read the [deep review](docs/DEEP_REVIEW.md) for remaining production decisions.
+For a first installation, use the [complete setup guide](docs/SETUP.md), which lists prerequisites and gives ordered instructions with verification checkpoints. This operating guide is the shorter day-to-day reference. For all environment and deployment settings, use the [private configuration workflow](docs/CONFIGURATION.md). Populate only ignored `config/local/` copies. The tracked JSON examples stay blank, and Jira origin and project key must be explicitly configured. Read the [deep review](docs/DEEP_REVIEW.md) for remaining production decisions.
 
 ## Prepare the destination
 
-Use a dedicated Jira Cloud service account limited to the approved destination project. Validate Browse Projects, Create Issues, Edit Issues and Link Issues; attachments also need Create Attachments. Confirm configured campaign/finding issue types, assignable account IDs, priority names, parent support, and mandatory create-screen fields. Put required custom fields in the policy rather than inferring them from an export.
+Use an approved dedicated automation account limited to the destination project. The supported path is a regular licensed Atlassian account with email/API-token Basic authentication against the exact tenant origin. Scoped-token gateway authentication, OAuth and native managed Atlassian Service accounts are not supported; if those are required, stop activation and extend the adapter. See the [authentication prerequisite](docs/SETUP.md#step-7-choose-compatible-jira-authentication) and [Atlassian token requirements](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/).
+
+Validate Browse Projects, Create Issues, Edit Issues and Link Issues; attachments also need Create Attachments. Verify conditional assignment, due-date and transition permissions. Confirm configured campaign/finding issue types, assignable account IDs, actual priority names, parent support, and mandatory create-screen fields. Put supported required custom fields in the policy rather than inferring them from an export; unsupported mandatory system fields need project defaults or an application change.
 
 Store this shape in AWS Secrets Manager through your approved secret-management process. Never paste real tokens into chat, source control, command arguments, or report files:
 
 ```json
 {
   "base_url": "https://jira-example.atlassian.net",
-  "email": "<dedicated Jira service account>",
-  "api_token": "<service account API token>",
+  "email": "<dedicated automation account email>",
+  "api_token": "<compatible account API token>",
   "identity_key": "<independent cryptographically random secret of at least 32 characters>"
 }
 ```
 
-The exact base URL must equal JiraOrigin. HTTP redirects, proxy forwarding and cross-origin credentials are not accepted. Restrict the service account and Secrets Manager read permission. Rotate the Jira API token without changing the independent identity key. Routine identity-key rotation needs a controlled re-signing migration; do not change it blindly or signed ticket recovery will fail. If compromised, revoke access and review state/Jira identities before enabling writes again.
+The exact base URL must equal JiraOrigin. HTTP redirects, proxy forwarding and cross-origin credentials are not accepted. Restrict the automation account and Secrets Manager read permission. Rotate the Jira API token before expiry without changing the independent identity key. Routine identity-key rotation needs a controlled re-signing migration; do not change it blindly or signed ticket recovery will fail. If compromised, revoke access and review state/Jira identities before enabling writes again.
 
 ## Approve configuration and storage
 
@@ -66,7 +68,7 @@ Retention defaults are 90 days for managed reports/evidence/audit objects and op
 
 ## Deploy with all writes disabled
 
-Use AWS SAM in an approved account and region. Review the change set; preserve the existing table when upgrading and assess the new index, audit bucket, and IAM changes:
+Use AWS SAM in an approved account and region. Follow the [private-file deployment steps](docs/SETUP.md#deploy-the-disabled-staging-stack) for the recommended route. Interactive `sam deploy --guided` is an alternative only if its generated configuration also remains private/ignored. Review the change set; preserve the existing table when upgrading and assess the new index, audit bucket, and IAM changes:
 
 ```bash
 sam build
@@ -127,6 +129,8 @@ Before activation, test in a nonproduction Jira project/account:
 8. Exceptions expire visibly, notifications recover independently, and alarms reach the confirmed operations subscription.
 
 Activate only after these checks and policy approvals: set ActivationApproved=true, retain dry run while testing the upload trigger, then set DryRun=false after reviewing previews. UploadTriggerState controls event routing and the queue consumer. MonitorState independently controls operational monitoring and must be enabled deliberately. ScheduleState controls optional Snyk reconciliation; its expression and timezone are configurable, with 8 AM UTC as the generic default. Set the intended local timezone explicitly in the private deployment file. All three start disabled.
+
+The automatic dry-run default is not a universal write block: ingest/attachment `--apply` explicitly selects live work once activation is approved. Monitoring can update exception/state information independently of import dry run. Review queued live continuations before enabling the consumer; changing the default does not convert a saved live job into a preview. Python operator commands must select the intended AWS SDK profile independently of the SAM deployment profile. See the [control matrix](docs/SETUP.md#understand-the-controls-before-adding-apply).
 
 ## Routine imports and checkpoints
 
