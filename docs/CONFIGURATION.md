@@ -2,6 +2,8 @@
 
 Keep environment-specific values out of GitHub. The tracked `config/environment.example.json` and `config/deployment.example.json` contain key names and blank values only. Create private copies under ignored `config/local/`; never populate the tracked examples. The configuration tool does not source a shell file, execute expressions or print settings values.
 
+For prerequisites, account preparation, exact deployment steps and activation checkpoints, start with the [complete setup guide](SETUP.md). This document is the settings reference, not a substitute for live staging acceptance.
+
 ## Create and validate local settings
 
 Run from the repository root with Python 3.12:
@@ -37,6 +39,8 @@ Review the change set; never add a production token to command arguments. The re
 ## Secrets and AWS credentials
 
 Do not add `JIRA_API_TOKEN`, `JIRA_EMAIL`, `AWS_ACCESS_KEY_ID`, signing keys or passwords to these files. Unknown keys are rejected. Store Jira account information and the independent signing key in Secrets Manager; use AWS IAM roles/SSO and the normal SDK credential chain. A private settings file is still sensitive infrastructure metadata, not a secret vault.
+
+The Jira client currently supports a regular automation account's email/API-token Basic authentication at the exact tenant origin. It does not support OAuth, scoped-token gateway URLs or native managed Atlassian Service accounts. Review the [authentication gate](SETUP.md#step-7-choose-compatible-jira-authentication) before choosing credentials. The deployment `profile` selects SAM only; operator Python commands need the intended AWS SDK profile/default independently.
 
 AWS recommends Secrets Manager for API credentials, and Lambda limits the combined environment to 4 KiB. The renderer applies a conservative budget including room for SAM-generated names. Mappings that do not fit need a separately designed external configuration mechanism rather than bypassing the limit. [AWS environment guidance](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html)
 
@@ -103,7 +107,7 @@ The table below is the application-owned variable inventory. AWS-reserved runtim
 | `ENFORCE_COUNT_MATCH` | `true` | `EnforceCountMatch` | Validated application setting |
 | `REQUIRE_SAME_REPORT_DATE` | `true` | `RequireSameReportDate` | Validated application setting |
 | `UPDATE_EXISTING_TITLES` | `true` | `UpdateExistingTitles` | Validated application setting |
-| `DRY_RUN` | `true` | `DryRun` | Default read-only behavior |
+| `DRY_RUN` | `true` | `DryRun` | Automatic-import default; privileged manual applies and monitoring are separate |
 | `ACTIVATION_APPROVED` | `false` | `ActivationApproved` | Separate approval gate for live mutations |
 | `MAX_GROUPS_PER_RUN` | `5000` | `MaxGroupsPerRun` | Validated application setting |
 | `MAX_GROUPS_PER_INVOCATION` | `20` | `MaxGroupsPerInvocation` | Validation/apply checkpoint chunk |

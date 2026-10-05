@@ -4,10 +4,11 @@ This documentation is for the people deploying, operating and maintaining the se
 
 | Reader or task | Start here |
 | --- | --- |
+| First installation, prerequisites and staged activation | [Complete step-by-step setup guide](SETUP.md) |
 | Project overview and local checks | [Repository README](../README.md) |
 | Architecture, identities and trust boundaries | [Architecture](ARCHITECTURE.md) |
 | Private environment and deployment settings | [Configuration](CONFIGURATION.md) |
-| Setup, activation, evidence and recovery | [Operating guide](../OPERATIONS.md) |
+| Routine imports, evidence and recovery | [Operating guide](../OPERATIONS.md) |
 | Developer remediation and Jira ticket conventions | [Ticket guide](TICKET_GUIDE.md) |
 | GitHub publication and contribution checks | [GitHub guide](GITHUB.md) |
 | Remaining risks and recommended improvements | [Deep review](DEEP_REVIEW.md) |

@@ -67,6 +67,12 @@ Run a disposable staging stack and Jira project with no production data. Test pe
 
 Priority P2. Preserve read-only CI, add branch ownership/protection and an approved full-history scanner; the local preflight checks a limited set of recognizable patterns. Hash-lock development-tool transitive dependencies if supply-chain policy requires it. Plan signing-key rotation with overlapping trusted key IDs rather than changing the key blindly. Limit human Jira editors who can spoof digest filenames, or verify downloaded attachment hashes before reuse when the threat model requires it. Coordinate human description writers because Jira updates are not atomic compare-and-swap.
 
+### Authentication compatibility is an activation gate
+
+Priority P1 for deployment compatibility; Informational severity, High confidence, not a confirmed credential bypass. `config.py` constrains JiraOrigin to an exact tenant origin; `jira_client.py` sends email/API-token Basic authentication there and rejects redirects/proxy forwarding. Atlassian scoped-token authentication requires a separate gateway/cloud ID, and native managed Service accounts require scoped tokens. Those integrations are not implemented. [Atlassian token requirements](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/)
+
+The [setup guide](SETUP.md#step-7-choose-compatible-jira-authentication) distinguishes a regular approved automation account from native Service accounts. If organizational policy requires scopes, native service accounts or OAuth, implement the approved adapter before activation instead of broadening the origin allowlist or weakening token policy. Test origin/cloud-ID binding, least-privilege scopes, redirect rejection, expiry and rotation. No live authentication compatibility test has been performed.
+
 ## Combined risk scenarios
 
 - Compromised approval role plus fabricated scan evidence can incorrectly verify an unresolved issue; strict CSV parsing alone does not protect this boundary.
@@ -86,4 +92,4 @@ Staging must additionally test IAM denial for each untrusted role, secret rotati
 
 ## Open decisions
 
-Which repository and visibility are approved? Who owns exception approval versus invocation? Which scanner/deployment system can authenticate evidence? What retention is required for unresolved versus verified cases? What recovery objectives and daily volumes are expected? Is the historical report count discrepancy understood? No default assumption in this review substitutes for those approvals.
+The user selected the public [GitHub repository](https://github.com/jaysonguglietta/LambdaJiraCreationTool), and sanitized publication plus CI have completed. Independent full-history scanning and protection settings still need review. Who owns exception approval versus invocation? Which Jira authentication approach is permitted by organizational policy? Which scanner/deployment system can authenticate evidence? What retention is required for unresolved versus verified cases? What recovery objectives and daily volumes are expected? Is the historical report count discrepancy understood? No default assumption in this review substitutes for those approvals.

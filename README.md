@@ -1,8 +1,10 @@
 # Security CSV automation for Jira
 
-This headless application turns uploaded security reports into actionable Critical-remediation work in an explicitly configured Jira project. It uses AWS IAM and a Jira service-account API token; no browser session is needed. Version 2 adds safer identities, source reconciliation, managed ticket updates, resumable imports, positive verification, independent attachments, and protected audit history.
+This headless application turns uploaded security reports into actionable Critical-remediation work in an explicitly configured Jira project. It uses AWS IAM and a dedicated automation account's compatible Jira API token; no browser session is needed at runtime. Version 2 adds safer identities, source reconciliation, managed ticket updates, resumable imports, positive verification, independent attachments, and protected audit history.
 
-Start with the [documentation index](docs/README.md), [private configuration guide](docs/CONFIGURATION.md) and [deep review](docs/DEEP_REVIEW.md). Environment-specific values belong in ignored `config/local/`; the tracked environment/deployment JSON templates contain blank values only. Jira origin and project key are explicitly required, not embedded as tenant defaults. Test keys such as `SEC-123` and tenant URLs such as `jira-example.atlassian.net` are synthetic examples, not destinations or credentials.
+For a first deployment, follow the [complete step-by-step setup guide](docs/SETUP.md): prerequisites, tools, Jira authentication, private settings, disabled AWS deployment, previews, controlled activation and troubleshooting. Use the [documentation index](docs/README.md), [private configuration reference](docs/CONFIGURATION.md) and [deep review](docs/DEEP_REVIEW.md) for additional detail. Environment-specific values belong in ignored `config/local/`; the tracked environment/deployment JSON templates contain blank values only. Jira origin and project key are explicitly required, not embedded as tenant defaults. Test keys such as `SEC-123` and tenant URLs such as `jira-example.atlassian.net` are synthetic examples, not destinations or credentials.
+
+Authentication compatibility is an activation prerequisite: the current client supports email/API-token Basic authentication against the exact Jira tenant origin, not OAuth or Atlassian's scoped-token gateway. Native managed Atlassian Service accounts require scoped tokens and are not supported by this client. See the [setup authentication gate](docs/SETUP.md#step-7-choose-compatible-jira-authentication) before creating credentials.
 
 The local implementation is tested. **AWS deployment, live Jira permissions, and activation are not verified.** Upload processing and the optional schedule remain disabled, `DryRun=true`, and `ActivationApproved=false`. The generic schedule is 8 AM UTC; set the approved timezone in the private deployment file. See [the operating guide](OPERATIONS.md) before enabling writes and [implementation status](IMPLEMENTATION_STATUS.md) for tested scope and remaining gates.
 
@@ -106,7 +108,7 @@ python3.12 scripts/security_operator.py profile-preview \
 
 For a real offline preview, replace the two fixture paths with your CSV paths. This reads the files locally and does not contact AWS or Jira. The result includes complete proposed ADF descriptions and count warnings.
 
-For cloud operator commands and evidence schemas, use [OPERATIONS.md](OPERATIONS.md). Cloud commands use the AWS SDK credential chain. Mutating operator commands require `--apply`; ingest/attachment invocations default to dry run. Direct Lambda access is privileged and must be restricted with IAM.
+For cloud operator commands and evidence schemas, use [OPERATIONS.md](OPERATIONS.md). Cloud commands use the AWS SDK credential chain; the private deployment profile selects SAM, not separate operator commands. Mutating operator commands require `--apply`; ingest/attachment invocations default to dry run. Once activation is approved, manual `--apply` can write even while the automatic-import default remains dry run. Direct Lambda access is privileged and must be restricted with IAM.
 
 ## Build and validate
 
@@ -128,7 +130,7 @@ python3.12 -m venv .venv
 
 The release zip uses sorted paths and fixed archive metadata. Its manifest records archive, lock-file, and template hashes. Build twice from the same dependency staging directory to compare hashes. The CI workflow uses pinned official action commits and checks/tests/builds without deploying or writing Jira.
 
-AWS SAM remains the deployment route: `sam build`, then review `sam deploy --guided` with triggers and writes disabled. The deterministic zip is also available for a reviewed release pipeline. SAM build/deployment and the actual arm64 Lambda environment were not exercised locally.
+AWS SAM remains the deployment route. Follow the [private-file build/deploy procedure](docs/SETUP.md#deploy-the-disabled-staging-stack) with triggers and writes disabled, then review every change set. The deterministic zip is also available for a reviewed release pipeline. SAM build/deployment and the actual arm64 Lambda environment were not exercised locally.
 
 ## Main implementation files
 
